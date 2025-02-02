@@ -6,95 +6,157 @@ export const createFaq = async (req, res) => {
   try {
     const { question, answer, targetLanguage = "en" } = req.body;
 
+    console.log("Creating FAQ with question:", question, "and answer:", answer);
+
     const translatedQuestion = await translateText(question, targetLanguage);
     const translatedAnswer = await translateText(answer, targetLanguage);
 
-    const translations = {
-      [targetLanguage]: {
-        question: translatedQuestion,
-        answer: translatedAnswer,
-      },
+    const translations = {};
+    translations[targetLanguage] = {
+      question: translatedQuestion,
+      answer: translatedAnswer,
     };
 
-    const faq = await Faq.create({ question, answer, translations });
+    console.log("Translations added:", translations);
 
+    const faq = await Faq.create({
+      question,
+      answer,
+      translations,
+    });
+
+    console.log("FAQ created successfully:", faq);
+
+    // Clear cache after adding new FAQ
     await redisClient.del(`faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
 
-    return res.status(200).json({ message: "Faq Created Successfully", faq });
+    return res.status(200).json({
+      message: "Faq Created Successfully",
+      faq: faq,
+    });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ message: "Internal server error", error: err.message });
+    console.error("Error in Create_FAQ:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
   }
 };
 
 export const getAllFaqs = async (req, res) => {
   try {
     const targetLanguage = req.query.targetLanguage || "en";
+    console.log("Fetching FAQs for targetLanguage:", targetLanguage);
 
+    // Check Redis cache first
     const cachedFaqs = await redisClient.get(`faqs:${targetLanguage}`);
     if (cachedFaqs) {
-      return res.status(200).json({ translatedFaqs: JSON.parse(cachedFaqs) });
+      console.log("Found cached FAQs for targetLanguage:", targetLanguage);
+      return res.status(200).json({
+        translatedFaqs: JSON.parse(cachedFaqs),
+      });
     }
 
+    console.log("No cached FAQs found. Fetching from database.");
+
+    // If not found in cache, fetch from database
     const faqs = await Faq.find();
 
     const translatedFaqs = faqs.map((faq) => {
-      const translations = faq.translations || {};
+      const translations = faq.translations ? faq.translations : {};
       const translatedData = translations[targetLanguage] || translations["en"];
+
+      const translatedQuestion = translatedData
+        ? translatedData.question
+        : faq.question;
+      const translatedAnswer = translatedData
+        ? translatedData.answer
+        : faq.answer;
+
       return {
         ...faq.toObject(),
-        question: translatedData?.question || faq.question,
-        answer: translatedData?.answer || faq.answer,
+        translations,
+        question: translatedQuestion,
+        answer: translatedAnswer,
       };
     });
 
+    // Cache the translated FAQs in Redis
     await redisClient.setEx(
       `faqs:${targetLanguage}`,
       3600,
       JSON.stringify(translatedFaqs)
     );
+    console.log("Cached translated FAQs for targetLanguage:", targetLanguage);
 
-    return res.status(200).json({ translatedFaqs });
+    return res.status(200).json({
+      translatedFaqs,
+    });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Internal server error", error: error.message });
+    console.error("Error in GetAllFaqs:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
 
 export const updateFaq = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) return res.status(400).json({ message: "Faq Id not found" });
+    if (!id) {
+      return res.status(400).json({
+        message: "Faq Id not found",
+      });
+    }
 
     const { question, answer, targetLanguage = "en" } = req.body;
+    console.log(
+      "Updating FAQ with ID:",
+      id,
+      "question:",
+      question,
+      "answer:",
+      answer
+    );
 
+    // Translate the question and answer
     const translatedQuestion = await translateText(question, targetLanguage);
     const translatedAnswer = await translateText(answer, targetLanguage);
 
-    const translations = {
-      [targetLanguage]: {
-        question: translatedQuestion,
-        answer: translatedAnswer,
-      },
+    const translations = {};
+    translations[targetLanguage] = {
+      question: translatedQuestion,
+      answer: translatedAnswer,
     };
-
+    console.log("translations", translations);
     const updatedFAQ = await Faq.findByIdAndUpdate(
       id,
-      { question, answer, translations },
+      {
+        question,
+        answer,
+        translations,
+      },
       { new: true }
     );
 
-    await redisClient.del(`faqs:${targetLanguage}`);
+    console.log("FAQ updated successfully:", updatedFAQ);
 
-    return res
-      .status(200)
-      .json({ message: "Successfully Updated Faq", UpdatedFAQ: updatedFAQ });
+    // Clear cache after updating an FAQ
+    await redisClient.del(`faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
+
+    return res.status(200).json({
+      message: "Successfully Updated Faq",
+      UpdatedFAQ: updatedFAQ,
+    });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ message: "Internal server error", error: err.message });
+    console.error("Error in Update_Faq:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
   }
 };
 
@@ -102,15 +164,28 @@ export const deleteFaq = async (req, res) => {
   try {
     const { targetLanguage = "en" } = req.body;
     const { id } = req.params;
-    if (!id) return res.status(400).json({ message: "Faq Id not found" });
+    if (!id) {
+      return res.status(400).json({
+        message: "Faq Id not found",
+      });
+    }
+
+    console.log("Deleting FAQ with ID:", id);
 
     await Faq.findByIdAndDelete(id);
-    await redisClient.del(`faqs:${targetLanguage}`);
 
-    return res.status(200).json({ message: "Faq Deleted" });
+    // Clear cache after deleting an FAQ
+    await redisClient.del(`faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
+
+    return res.status(200).json({
+      message: "Faq Deleted",
+    });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ message: "Internal server error", error: err.message });
+    console.error("Error in Delete_Faq:", err);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: err.message,
+    });
   }
 };
