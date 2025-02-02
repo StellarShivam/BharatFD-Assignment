@@ -6,13 +6,9 @@ export const createFaq = async (req, res) => {
   try {
     const { question, answer, targetLanguage = "en" } = req.body;
 
-    console.log(
-      "Processing FAQ creation with question:",
-      question,
-      "and answer:",
-      answer
-    );
+    console.log("Creating FAQ with question:", question, "and answer:", answer);
 
+    // Translate the question and answer
     const translatedQuestion = await translateText(question, targetLanguage);
     const translatedAnswer = await translateText(answer, targetLanguage);
 
@@ -22,7 +18,7 @@ export const createFaq = async (req, res) => {
       answer: translatedAnswer,
     };
 
-    console.log("Stored translations:", translations);
+    console.log("Translations added:", translations);
 
     const faq = await Faq.create({
       question,
@@ -30,17 +26,18 @@ export const createFaq = async (req, res) => {
       translations,
     });
 
-    console.log("FAQ entry created:", faq);
+    console.log("FAQ created successfully:", faq);
 
+    // Clear cache after adding new FAQ
     await redisClient.del(`faqs:${targetLanguage}`);
-    console.log(`Cache purged for faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
 
     return res.status(200).json({
-      message: "FAQ successfully created",
+      message: "Faq Created Successfully",
       faq: faq,
     });
   } catch (err) {
-    console.error("Error during FAQ creation:", err);
+    console.error("Error in Create_FAQ:", err);
     return res.status(500).json({
       message: "Internal server error",
       error: err.message,
@@ -51,18 +48,20 @@ export const createFaq = async (req, res) => {
 export const getAllFaqs = async (req, res) => {
   try {
     const targetLanguage = req.query.targetLanguage || "en";
-    console.log("Retrieving FAQs for language:", targetLanguage);
+    console.log("Fetching FAQs for targetLanguage:", targetLanguage);
 
+    // Check Redis cache first
     const cachedFaqs = await redisClient.get(`faqs:${targetLanguage}`);
     if (cachedFaqs) {
-      console.log("Loaded cached FAQs for:", targetLanguage);
+      console.log("Found cached FAQs for targetLanguage:", targetLanguage);
       return res.status(200).json({
         translatedFaqs: JSON.parse(cachedFaqs),
       });
     }
 
-    console.log("No cached data found, querying database.");
+    console.log("No cached FAQs found. Fetching from database.");
 
+    // If not found in cache, fetch from database
     const faqs = await Faq.find();
 
     const translatedFaqs = faqs.map((faq) => {
@@ -84,18 +83,19 @@ export const getAllFaqs = async (req, res) => {
       };
     });
 
+    // Cache the translated FAQs in Redis
     await redisClient.setEx(
       `faqs:${targetLanguage}`,
       3600,
       JSON.stringify(translatedFaqs)
     );
-    console.log("FAQs cached for language:", targetLanguage);
+    console.log("Cached translated FAQs for targetLanguage:", targetLanguage);
 
     return res.status(200).json({
       translatedFaqs,
     });
   } catch (error) {
-    console.error("Error while retrieving FAQs:", error);
+    console.error("Error in GetAllFaqs:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,
@@ -108,20 +108,21 @@ export const updateFaq = async (req, res) => {
     const { id } = req.params;
     if (!id) {
       return res.status(400).json({
-        message: "FAQ ID is required",
+        message: "Faq Id not found",
       });
     }
 
     const { question, answer, targetLanguage = "en" } = req.body;
     console.log(
-      "Modifying FAQ entry with ID:",
+      "Updating FAQ with ID:",
       id,
-      "New question:",
+      "question:",
       question,
-      "New answer:",
+      "answer:",
       answer
     );
 
+    // Translate the question and answer
     const translatedQuestion = await translateText(question, targetLanguage);
     const translatedAnswer = await translateText(answer, targetLanguage);
 
@@ -130,7 +131,7 @@ export const updateFaq = async (req, res) => {
       question: translatedQuestion,
       answer: translatedAnswer,
     };
-    console.log("Updated translations:", translations);
+    console.log("translations",translations)
     const updatedFAQ = await Faq.findByIdAndUpdate(
       id,
       {
@@ -141,17 +142,18 @@ export const updateFaq = async (req, res) => {
       { new: true }
     );
 
-    console.log("FAQ successfully updated:", updatedFAQ);
+    console.log("FAQ updated successfully:", updatedFAQ);
 
+    // Clear cache after updating an FAQ
     await redisClient.del(`faqs:${targetLanguage}`);
-    console.log(`Cleared cache for faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
 
     return res.status(200).json({
-      message: "FAQ updated successfully",
+      message: "Successfully Updated Faq",
       UpdatedFAQ: updatedFAQ,
     });
   } catch (err) {
-    console.error("Error while updating FAQ:", err);
+    console.error("Error in Update_Faq:", err);
     return res.status(500).json({
       message: "Internal server error",
       error: err.message,
@@ -165,22 +167,23 @@ export const deleteFaq = async (req, res) => {
     const { id } = req.params;
     if (!id) {
       return res.status(400).json({
-        message: "FAQ ID is required",
+        message: "Faq Id not found",
       });
     }
 
-    console.log("Removing FAQ entry with ID:", id);
+    console.log("Deleting FAQ with ID:", id);
 
     await Faq.findByIdAndDelete(id);
 
+    // Clear cache after deleting an FAQ
     await redisClient.del(`faqs:${targetLanguage}`);
-    console.log(`Cache invalidated for faqs:${targetLanguage}`);
+    console.log(`Cache cleared for faqs:${targetLanguage}`);
 
     return res.status(200).json({
-      message: "FAQ deleted successfully",
+      message: "Faq Deleted",
     });
   } catch (err) {
-    console.error("Error while deleting FAQ:", err);
+    console.error("Error in Delete_Faq:", err);
     return res.status(500).json({
       message: "Internal server error",
       error: err.message,

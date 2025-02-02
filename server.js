@@ -8,7 +8,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use("/api/faqs", FaqRoutes);
+app.use("/Faqs", FaqRoutes);
 app.listen(process.env.PORT, async () => {
   console.log("Our App is working on " + process.env.PORT);
   await DBConnection();
